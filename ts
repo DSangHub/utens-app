@@ -401,3 +401,23 @@ export async function POST(
 
   return NextResponse.json(turn);
 }
+// api/stripe/portal/route.ts
+import { stripe } from "@/lib/stripe";
+import { prisma } from "@/lib/db";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { NextResponse } from "next/server";
+
+export async function POST() {
+  const session = await getServerSession(authOptions);
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: session!.user.id },
+    include: { org: true },
+  });
+  const portal = await stripe.billingPortal.sessions.create({
+    customer: user.org!.stripeCustomerId!,
+    return_url: `${process.env.NEXTAUTH_URL}/billing`,
+  });
+  return NextResponse.json({ url: portal.url });
+}PRO: { profiles: 10, replies: 5000, deepMode: true, conversion: true }// On Stripe: metered price for overage at $0.01/reply
+// Report usage via stripe.subscriptionItems.createUsageRecord()
