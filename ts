@@ -421,3 +421,108 @@ export async function POST() {
   return NextResponse.json({ url: portal.url });
 }PRO: { profiles: 10, replies: 5000, deepMode: true, conversion: true }// On Stripe: metered price for overage at $0.01/reply
 // Report usage via stripe.subscriptionItems.createUsageRecord()
+import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+import { getOrgAccess } from "@/lib/trial";
+
+export async function GET() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ error: "unauth" }, { status: 401 });
+
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: session.user.id } });
+  if (!user.orgId) return NextResponse.json({ products: [] });
+
+  const products = await prisma.product.findMany({
+    where: { orgId: user.orgId },
+    orderBy: { createdAt: "desc" },
+  });
+  return NextResponse.json({ products });
+}
+
+export async function POST(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ error: "unauth" }, { status: 401 });
+
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: session.user.id },
+    include: { org: true },
+  });
+  if (!user.orgId) return NextResponse.json({ error: "no org" }, { status: 400 });
+
+  const access = await getOrgAccess(user.orgId);
+  if (!access.limits.deepMode) {
+    return NextResponse.json(
+      { error: "Product catalog requires the Pro plan" },
+      { status: 402 }
+    );
+  }
+
+  const body = await req.json();
+  const { name, description, price, url, imageUrl, keywords } = body;
+
+  if (!name || !description || typeof price !== "number") {
+    return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+  }
+
+  const product = await prisma.product.create({
+    data: {
+      orgId: user.orgId,
+      name,
+      description,
+      price,
+      url: url || null,
+      imageUrl: imageUrl || null,
+      keywords: Array.isArray(keywords) ? keywords : [],
+    },
+  });
+
+  return NextResponse.json({ product });
+}import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+
+async function assertOwner(productId: string, userId: string) {
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  const product = await prisma.product.findUniqueOrThrow({ where: { id: productId } });
+  if (!user.orgId || product.orgId !== user.orgId) throw new Error("forbidden");
+  return product;
+}
+
+export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ error: "unauth" }, { status: 401 });
+  try {
+    await assertOwner(params.id, session.user.id);
+  } catch {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+
+  const body = await req.json();
+  const product = await prisma.product.update({
+    where: { id: params.id },
+    data: {
+      name: body.name,
+      description: body.description,
+      price: body.price,
+      url: body.url ?? null,
+      imageUrl: body.imageUrl ?? null,
+      keywords: body.keywords ?? [],
+    },
+  });
+  return NextResponse.json({ product });
+}
+
+export async function DELETE(_: NextRequest, { params }: { params: { id: string } }) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ error: "unauth" }, { status: 401 });
+  try {
+    await assertOwner(params.id, session.user.id);
+  } catch {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+  await prisma.product.delete({ where: { id: params.id } });
+  return NextResponse.json({ ok: true });
+}
