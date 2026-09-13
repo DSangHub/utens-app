@@ -862,3 +862,134 @@ if (owner) {
     ),
   });
 }
+import { prisma } from "@/lib/db";
+import { stripe } from "@/lib/stripe";
+import { PLAN_LIMITS } from "@/lib/stripe";
+
+export async function recordReply(orgId: string, refId: string, deep = false) {
+  const org = await prisma.organization.findUniqueOrThrow({ where: { id: orgId } });
+
+  // Ensure period rollover
+  const now = new Date();
+  if (!org.periodStart || !org.periodEnd || now > org.periodEnd) {
+    await prisma.organization.update({
+      where: { id: orgId },
+      data: {
+        repliesThisPeriod: 0,
+        periodStart: now,
+        periodEnd: new Date(now.getTime() + 30 * 864e5),
+        overageReportedAt: null,
+      },
+    });
+  }
+
+  const limit = PLAN_LIMITS[org.plan as keyof typeof PLAN_LIMITS]?.replies ?? 0;
+  const billable = org.repliesThisPeriod >= limit && org.plan !== "TRIAL" && org.plan !== "CANCELLED";
+
+  await prisma.$transaction([
+    prisma.usageEvent.create({
+      data: { orgId, kind: deep ? "deep_turn" : "reply", refId, billable },
+    }),
+    prisma.organization.update({
+      where: { id: orgId },
+      data: { repliesThisPeriod: { increment: 1 } },
+    }),
+  ]);
+
+  return { billable, newCount: org.repliesThisPeriod + 1, limit };
+}import { recordReply } from "@/lib/usage";
+
+// after auto-reply success
+await recordReply(profile.orgId, comment.id, false);
+
+// after starting a deep conversationimport { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { stripe } from "@/lib/stripe";
+
+export const dynamic = "force-dynamic";
+
+export async function GET(req: NextRequest) {
+  if (req.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: "unauth" }, { status: 401 });
+  }
+
+  const now = new Date();
+  const due = await prisma.organization.findMany({
+    where: {
+      plan: { in: ["STARTER", "PRO"] },
+      stripeOverageItemId: { not: null },
+      periodEnd: { lte: now },
+      overageReportedAt: null,
+    },
+  });
+
+  const results: any[] = [];
+
+  for (const org of due) {
+    const billableCount = await prisma.usageEvent.count({
+      where: {
+        orgId: org.id,
+        billable: true,
+        createdAt: { gte: org.periodStart!, lte: org.periodEnd! },
+      },
+    });
+
+    if (billableCount > 0) {
+      try {
+        await stripe.subscriptionItems.createUsageRecord(
+          org.stripeOverageItemId!,
+          {
+            quantity: billableCount,
+            timestamp: Math.floor(now.getTime() / 1000),
+            action: "increment",
+          }
+        );
+      } catch (e) {
+        console.error("stripe usage failed", org.id, e);
+        results.push({ orgId: org.id, error: String(e) });
+        continue;
+      }
+    }
+
+    await prisma.organization.update({
+      where: { id: org.id },
+      data: { overageReportedAt: now },
+    });
+    results.push({ orgId: org.id, reported: billableCount });
+  }
+
+  return NextResponse.json({ ok: true, results });
+}// in api/stripe/checkout/route.ts
+const checkout = await stripe.checkout.sessions.create({
+  mode: "subscription",
+  customer: customerId,
+  line_items: [
+    { price: priceId, quantity: 1 },
+    { price: process.env.STRIPE_PRICE_OVERAGE! }, // metered, no quantity
+  ],
+  subscription_data: {
+    trial_period_days: TRIAL_DAYS,
+    metadata: { orgId: org.id, plan },
+  },
+  // ...
+});case "checkout.session.completed": {
+  const s = event.data.object as any;
+  const sub = await stripe.subscriptions.retrieve(s.subscription);
+  const overageItem = sub.items.data.find(
+    (i) => i.price.id === process.env.STRIPE_PRICE_OVERAGE
+  );
+  await prisma.organization.update({
+    where: { id: s.metadata.orgId },
+    data: {
+      plan: s.metadata.plan,
+      stripeSubId: sub.id,
+      stripeOverageItemId: overageItem?.id ?? null,
+      periodStart: new Date(sub.current_period_start * 1000),
+      periodEnd: new Date(sub.current_period_end * 1000),
+      trialEndsAt: sub.trial_end ? new Date(sub.trial_end * 1000) : null,
+      repliesThisPeriod: 0,
+    },
+  });
+  break;
+}
+await recordReply(profile.orgId, comment.id, true);
