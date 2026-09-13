@@ -81,4 +81,12 @@ NEXTAUTH_SECRET=...src/app/
     ├── ProgressBar.tsx
     ├── StepShell.tsx
     ├── Input.tsx
-    └── TemplatePicker.tsx
+    └── TemplatePicker.tsx 
+Comment → Classify → Match script → Reply → DoneComment → Classify → Match script → Reply
+        → Open "conversation thread" with customer
+        → AI asks clarifying questions
+        → AI promotes relevant product(s)
+        → Handles objections ("too expensive", "does it work?")
+        → Sends checkout link
+        → Follows up in 24h if no purchase
+        → Tracks conversion in dashboard
