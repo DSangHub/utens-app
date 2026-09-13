@@ -109,3 +109,154 @@ export async function GET(
 
   return NextResponse.redirect("/onboarding/step-3-connect?success=1");
 }
+import Stripe from "stripe";
+export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: "2024-06-20",
+});
+
+export const PRICES = {
+  STARTER: process.env.STRIPE_PRICE_STARTER!, // price_xxx  → $19.95
+  PRO:     process.env.STRIPE_PRICE_PRO!,     // price_yyy  → $49.95
+};
+
+export const TRIAL_DAYS = 14;
+
+export const PLAN_LIMITS = {
+  TRIAL:   { profiles: 3,  replies: 500,   deepMode: true,  conversion: true  },
+  STARTER: { profiles: 3,  replies: 2000,  deepMode: false, conversion: false },
+  PRO:     { profiles: 10, replies: 15000, deepMode: true,  conversion: true  },
+  CANCELLED: { profiles: 0, replies: 0, deepMode: false, conversion: false },
+} as const;import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+import { stripe, PRICES, TRIAL_DAYS } from "@/lib/stripe";
+
+export async function POST(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ error: "unauth" }, { status: 401 });
+
+  const { plan } = await req.json(); // "STARTER" | "PRO"
+  const priceId = PRICES[plan as "STARTER" | "PRO"];
+  if (!priceId) return NextResponse.json({ error: "bad plan" }, { status: 400 });
+
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: session.user.id },
+    include: { org: true },
+  });
+  const org = user.org!;
+
+  // Create or reuse Stripe customer
+  let customerId = org.stripeCustomerId;
+  if (!customerId) {
+    const customer = await stripe.customers.create({
+      email: user.email,
+      name: org.name,
+      metadata: { orgId: org.id },
+    });
+    customerId = customer.id;
+    await prisma.organization.update({
+      where: { id: org.id },
+      data: { stripeCustomerId: customerId },
+    });
+  }
+
+  const checkout = await stripe.checkout.sessions.create({
+    mode: "subscription",
+    customer: customerId,
+    line_items: [{ price: priceId, quantity: 1 }],
+    subscription_data: {
+      trial_period_days: TRIAL_DAYS,
+      metadata: { orgId: org.id, plan },
+    },
+    success_url: `${process.env.NEXTAUTH_URL}/onboarding/step-7-done?session={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${process.env.NEXTAUTH_URL}/onboarding/step-6-plan?cancelled=1`,
+    allow_promotion_codes: true,
+  });
+
+  return NextResponse.json({ url: checkout.url });
+}import { NextRequest, NextResponse } from "next/server";
+import { stripe } from "@/lib/stripe";
+import { prisma } from "@/lib/db";
+
+export async function POST(req: NextRequest) {
+  const sig = req.headers.get("stripe-signature")!;
+  const body = await req.text();
+  const event = stripe.webhooks.constructEvent(
+    body, sig, process.env.STRIPE_WEBHOOK_SECRET!
+  );
+
+  switch (event.type) {
+    case "checkout.session.completed": {
+      const s = event.data.object as any;
+      await prisma.organization.update({
+        where: { id: s.metadata.orgId },
+        data: {
+          plan: s.metadata.plan,
+          stripeSubId: s.subscription,
+          trialEndsAt: new Date(Date.now() + 14 * 864e5),
+        },
+      });
+      break;
+    }
+
+    case "customer.subscription.updated": {
+      const sub = event.data.object as any;
+      const orgId = sub.metadata.orgId;
+      const status = sub.status; // trialing | active | past_due | canceled
+      await prisma.organization.update({
+        where: { id: orgId },
+        data: {
+          plan: status === "canceled" ? "CANCELLED"
+              : sub.items.data[0].price.id === process.env.STRIPE_PRICE_PRO ? "PRO"
+              : "STARTER",
+          currentPeriodEnd: new Date(sub.current_period_end * 1000),
+          trialEndsAt: sub.trial_end ? new Date(sub.trial_end * 1000) : null,
+        },
+      });
+      break;
+    }
+
+    case "customer.subscription.deleted": {
+      const sub = event.data.object as any;
+      await prisma.organization.update({
+        where: { id: sub.metadata.orgId },
+        data: { plan: "CANCELLED" },
+      });
+      break;
+    }
+  }
+
+  return NextResponse.json({ received: true });
+}const org = await prisma.organization.create({
+  data: {
+    name: `${name ?? "My"}'s Brand`,
+    plan: "TRIAL",
+    trialEndsAt: new Date(Date.now() + 14 * 864e5),
+  },
+});import { prisma } from "@/lib/db";
+import { PLAN_LIMITS } from "@/lib/stripe";
+
+export async function getOrgAccess(orgId: string) {
+  const org = await prisma.organization.findUniqueOrThrow({ where: { id: orgId } });
+
+  const now = new Date();
+  const trialActive = org.plan === "TRIAL" && org.trialEndsAt && org.trialEndsAt > now;
+  const trialExpired = org.plan === "TRIAL" && org.trialEndsAt && org.trialEndsAt <= now;
+
+  if (trialExpired) {
+    await prisma.organization.update({
+      where: { id: orgId },
+      data: { plan: "CANCELLED" },
+    });
+  }
+
+  const effectivePlan = trialActive ? "TRIAL" : org.plan;
+  return {
+    plan: effectivePlan,
+    limits: PLAN_LIMITS[effectivePlan as keyof typeof PLAN_LIMITS],
+    trialDaysLeft: trialActive
+      ? Math.ceil((org.trialEndsAt!.getTime() - now.getTime()) / 864e5)
+      : 0,
+  };
+}
