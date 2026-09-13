@@ -2312,4 +2312,31 @@ function MessageBubble({ m }: { m: Message }) {
       </div>
     </div>
   );
-}
+}const org = user.org!;
+const limit = access.limits.replies;
+const used = org.repliesThisPeriod;
+const pct = Math.min(100, Math.round((used / limit) * 100));
+const overage = Math.max(0, used - limit);
+
+<div className="mt-6 rounded-2xl border border-gray-200 p-6 bg-white">
+  <div className="flex items-center justify-between mb-3">
+    <div className="text-sm font-medium text-gray-700">Replies this period</div>
+    <div className="text-sm text-gray-500">
+      {used.toLocaleString()} / {limit.toLocaleString()}
+    </div>
+  </div>
+  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+    <div
+      className={`h-full ${pct >= 100 ? "bg-amber-500" : "bg-indigo-600"}`}
+      style={{ width: `${Math.min(pct, 100)}%` }}
+    />
+  </div>
+  {overage > 0 && (
+    <div className="mt-3 text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+      {overage.toLocaleString()} overage replies · ${(overage * 0.01).toFixed(2)} will be added to your next invoice.
+    </div>
+  )}
+  <p className="mt-3 text-xs text-gray-500">
+    Overage is billed at $0.01 per reply. Report runs at the end of each billing cycle.
+  </p>
+</div>
