@@ -101,3 +101,12 @@ src/app/(dashboard)/products/
 └── api/
     ├── products/route.ts       # GET (list) + POST (create)
     └── products/[id]/route.ts  # GET, PATCH, DELETE
+src/app/(dashboard)/conversations/
+├── page.tsx                    # List view
+├── [id]/page.tsx               # Thread view
+├── conversation-list.tsx
+├── thread-view.tsx
+└── api/
+    └── conversations/
+        ├── route.ts            # GET (list with filters)
+        └── [id]/route.ts       # GET (thread details)
