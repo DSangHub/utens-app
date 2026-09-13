@@ -121,4 +121,11 @@ NEXTAUTH_URL=https://utens.app
 RESEND_API_KEY=re_xxx
 CRON_SECRET=<random>
 STRIPE_PRICE_OVERAGE=price_xxx
-PURCHASE_WEBHOOK_SECRET=<random>
+PURCHASE_WEBHOOK_SECRET=<random>utens-vercel/
+├── index.html           # Landing page
+├── pricing.html         # Standalone pricing page
+├── signup.html          # Signup form
+├── 404.html             # Custom 404
+├── vercel.json          # Vercel config
+├── robots.txt
+└── sitemap.xml
