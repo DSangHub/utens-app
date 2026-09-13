@@ -63,3 +63,140 @@ export async function holdMessage(customerName: string, brand: string) {
   });
   return res.choices[0].message.content!;
 }
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { classifyComment, generateResponse, holdMessage } from "@/lib/ai";
+import { escalateToHost } from "@/lib/twilio";
+import { postReply } from "@/lib/platforms";
+
+export async function POST(req: NextRequest) {
+  const { profileId, externalId, authorName, content } = await req.json();
+
+  const profile = await prisma.profile.findUniqueOrThrow({
+    where: { id: profileId },
+    include: { org: { include: { scripts: true } } },
+  });
+
+  const comment = await prisma.comment.create({
+    data: { profileId, externalId, authorName, content },
+  });
+
+  // 1. Classify
+  const intent = await classifyComment(content);
+  await prisma.comment.update({
+    where: { id: comment.id },
+    data: { intent: intent.intent, sentiment: intent.sentiment },
+  });
+
+  // 2. Generate AI response
+  const { reply, confidence } = await generateResponse(
+    content,
+    profile.org.scripts,
+    "friendly, professional, concise"
+  );
+
+  const shouldEscalate =
+    intent.needsEscalation || confidence < 0.7 || !profile.autoReply;
+
+  if (!shouldEscalate) {
+    await postReply(profile.platform, profile.accessToken!, externalId, reply);
+    await prisma.comment.update({
+      where: { id: comment.id },
+      data: {
+        aiResponse: reply,
+        finalResponse: reply,
+        confidence,
+        status: "AI_REPLIED",
+        respondedAt: new Date(),
+      },
+    });
+    return NextResponse.json({ status: "auto_replied", reply });
+  }
+
+  // 3. Escalate — send holding message + notify host
+  const holding = await holdMessage(authorName, profile.org.name);
+  await postReply(profile.platform, profile.accessToken!, externalId, holding);
+
+  await escalateToHost({
+    email: profile.escalationEmail,
+    phone: profile.escalationPhone,
+    comment: { authorName, content, intent: intent.intent },
+    suggestedReply: reply,
+    confidence,
+    commentId: comment.id,
+  });
+
+  await prisma.comment.update({
+    where: { id: comment.id },
+    data: {
+      aiResponse: reply,
+      finalResponse: holding,
+      confidence,
+      status: "ESCALATED",
+      escalatedAt: new Date(),
+    },
+  });
+
+  return NextResponse.json({ status: "escalated", holding });
+}import twilio from "twilio";
+import { Resend } from "resend";
+
+const client = twilio(process.env.TWILIO_SID!, process.env.TWILIO_TOKEN!);
+const resend = new Resend(process.env.RESEND_API_KEY!);
+
+export async function escalateToHost({
+  email, phone, comment, suggestedReply, confidence, commentId,
+}: any) {
+  const body = `🔔 New ${comment.intent} from @${comment.authorName}:
+"${comment.content}"
+
+AI suggested: "${suggestedReply}" (${Math.round(confidence * 100)}%)
+
+Reply: https://utens.app/inbox/${commentId}`;
+
+  if (phone) {
+    await client.messages.create({
+      from: process.env.TWILIO_NUMBER!,
+      to: phone,
+      body,
+    });
+  }
+  if (email) {
+    await resend.emails.send({
+      from: "alerts@utens.app",
+      to: email,
+      subject: `New ${comment.intent} needs your reply`,
+      text: body,
+    });
+  }
+}import Stripe from "stripe";
+export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: "2024-06-20",
+});
+
+export const PLANS = {
+  STARTER: { priceId: "price_xxx", limit: 2000 },
+  PRO: { priceId: "price_yyy", limit: 15000 },
+};import { NextRequest, NextResponse } from "next/server";
+import { stripe } from "@/lib/stripe";
+import { prisma } from "@/lib/db";
+
+export async function POST(req: NextRequest) {
+  const sig = req.headers.get("stripe-signature")!;
+  const body = await req.text();
+  const event = stripe.webhooks.constructEvent(
+    body, sig, process.env.STRIPE_WEBHOOK_SECRET!
+  );
+
+  if (event.type === "checkout.session.completed") {
+    const s = event.data.object as any;
+    await prisma.organization.update({
+      where: { id: s.metadata.orgId },
+      data: {
+        stripeCustomerId: s.customer,
+        plan: s.metadata.plan,
+      },
+    });
+  }
+  return NextResponse.json({ received: true });
+}
