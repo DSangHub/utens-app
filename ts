@@ -628,3 +628,162 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     },
   });
 }
+// api/webhooks/purchase/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+
+export async function POST(req: NextRequest) {
+  const { secret, customerHandle, orderId } = await req.json();
+  if (secret !== process.env.PURCHASE_WEBHOOK_SECRET) {
+    return NextResponse.json({ error: "unauth" }, { status: 401 });
+  }
+
+  const conv = await prisma.conversation.findFirst({
+    where: {
+      outcome: "OPEN",
+      comment: { authorHandle: customerHandle },
+    },
+    orderBy: { updatedAt: "desc" },
+  });
+
+  if (conv) {
+    await prisma.conversation.update({
+      where: { id: conv.id },
+      data: { outcome: "CONVERTED", purchaseAt: new Date() },
+    });
+  }
+
+  return NextResponse.json({ ok: true, matched: !!conv });
+}import { Resend } from "resend";
+export const resend = new Resend(process.env.RESEND_API_KEY!);
+export const FROM = "Utens <hello@utens.app>";const shell = (body: string) => `
+  <div style="font-family:Inter,system-ui,sans-serif;max-width:560px;margin:0 auto;padding:32px;color:#111827;">
+    <div style="font-size:20px;font-weight:700;margin-bottom:24px;">
+      Utens<span style="color:#4F46E5;">.app</span>
+    </div>
+    ${body}
+    <p style="margin-top:40px;font-size:12px;color:#9CA3AF;">
+      Utens.app · The AI front desk for comments, questions & complaints.<br/>
+      <a href="{{unsubscribe}}" style="color:#9CA3AF;">Unsubscribe</a>
+    </p>
+  </div>
+`;
+
+const btn = (href: string, label: string) =>
+  `<a href="${href}" style="display:inline-block;background:#4F46E5;color:#fff;text-decoration:none;font-weight:600;padding:12px 20px;border-radius:10px;margin:16px 0;">${label}</a>`;
+
+export const TEMPLATES = {
+  welcome: (firstName: string, dashboardUrl: string) =>
+    shell(`
+      <h1 style="font-size:22px;margin:0 0 8px;">Welcome, ${firstName} 👋</h1>
+      <p>Your 14-day free trial is live. Full Pro access, no card required.</p>
+      <p style="margin-top:16px;"><strong>Here's what to do in your first 5 minutes:</strong></p>
+      <ol style="padding-left:20px;color:#374151;">
+        <li>Connect a profile (Instagram, TikTok, etc.)</li>
+        <li>Add 3–5 scripted replies</li>
+        <li>Watch the AI handle comments in real time</li>
+      </ol>
+      ${btn(dashboardUrl, "Open my dashboard")}
+      <p style="color:#6B7280;font-size:14px;">Questions? Reply to this email — a human will answer.</p>
+    `),
+
+  day1_tips: (firstName: string, dashboardUrl: string) =>
+    shell(`
+      <h1 style="font-size:22px;margin:0 0 8px;">${firstName}, here's how top brands use Utens</h1>
+      <p>3 quick wins from our best-performing accounts:</p>
+      <ul style="padding-left:20px;color:#374151;">
+        <li><strong>Write 5–10 scripts</strong> — the AI sounds more "you" with more examples.</li>
+        <li><strong>Set escalation to SMS</strong> — approve replies in seconds.</li>
+        <li><strong>Try Pro mode</strong> — let the AI turn commenters into buyers.</li>
+      </ul>
+      ${btn(dashboardUrl, "Open dashboard")}
+    `),
+
+  day7_midpoint: (firstName: string, daysLeft: number, dashboardUrl: string) =>
+    shell(`
+      <h1 style="font-size:22px;margin:0 0 8px;">Halfway through your trial, ${firstName}</h1>
+      <p>You've got <strong>${daysLeft} days left</strong> of full Pro access.</p>
+      <p>Want to keep it? Pick a plan and your trial rolls seamlessly into paid — no data lost, no downtime.</p>
+      ${btn(dashboardUrl + "/billing", "Keep Pro for $49.95/mo")}
+      <p style="color:#6B7280;font-size:14px;">Starter is $19.95/mo if you only need AI replies (no sales conversations).</p>
+    `),
+
+  day12_final_stretch: (firstName: string, dashboardUrl: string) =>
+    shell(`
+      <h1 style="font-size:22px;margin:0 0 8px;">2 days left, ${firstName} ⏳</h1>
+      <p>Your Pro trial ends in 48 hours. After that, profiles pause and new comments go unanswered.</p>
+      <p><strong>What you'd lose:</strong></p>
+      <ul style="padding-left:20px;color:#374151;">
+        <li>24/7 AI replies to every comment</li>
+        <li>Escalation SMS when AI isn't sure</li>
+        <li>Sales conversations that drive purchases</li>
+      </ul>
+      ${btn(dashboardUrl + "/billing", "Upgrade in 1 click")}
+      <p style="color:#6B7280;font-size:14px;">Cancel anytime. 30-day money-back guarantee.</p>
+    `),
+
+  day14_ended: (firstName: string, dashboardUrl: string) =>
+    shell(`
+      <h1 style="font-size:22px;margin:0 0 8px;">Your trial just ended</h1>
+      <p>We paused your profiles for now. Your scripts, products, and conversations are all saved.</p>
+      <p>Reactivate any time — everything comes back exactly where you left it.</p>
+      ${btn(dashboardUrl + "/billing", "Reactivate my account")}
+      <p style="color:#6B7280;font-size:14px;">Need more time? Reply to this email — we'll extend your trial.</p>
+    `),
+
+  converted: (firstName: string, plan: string, dashboardUrl: string) =>
+    shell(`
+      <h1 style="font-size:22px;margin:0 0 8px;">You're on ${plan} 🎉</h1>
+      <p>Thanks, ${firstName}. Your subscription is active and your profiles are live again.</p>
+      <p>You can manage billing, invoices, and cancellation at any time from your dashboard.</p>
+      ${btn(dashboardUrl + "/billing", "Manage billing")}
+    `),
+};import { prisma } from "@/lib/db";
+import { resend, FROM } from "./send";
+import { TEMPLATES } from "./templates";
+
+const APP_URL = process.env.NEXTAUTH_URL!;
+
+type Stage = "day0" | "day1" | "day7" | "day12" | "day14";
+
+function stageKey(stage: Stage) {
+  return `trial_email_${stage}`;
+}
+
+export async function sendTrialEmail(
+  userId: string,
+  email: string,
+  name: string,
+  stage: Stage
+) {
+  const firstName = (name || "there").split(" ")[0];
+  const dashboardUrl = `${APP_URL}/dashboard`;
+
+  const subjects: Record<Stage, string> = {
+    day0: "Welcome to Utens — your 14-day Pro trial is live 🎉",
+    day1: "3 quick wins from our best accounts",
+    day7: "Halfway through your Utens trial",
+    day12: "2 days left on your Pro trial",
+    day14: "Your Utens trial just ended (data saved)",
+  };
+
+  const html = (TEMPLATES as any)[{
+    day0: "welcome",
+    day1: "day1_tips",
+    day7: "day7_midpoint",
+    day12: "day12_final_stretch",
+    day14: "day14_ended",
+  }[stage]](firstName, dashboardUrl);
+
+  await resend.emails.send({
+    from: FROM,
+    to: email,
+    subject: subjects[stage],
+    html,
+  });
+
+  // Log so we never send twice
+  await prisma.emailLog.create({
+    data: { userId, stage, sentAt: new Date() },
+  });
+}
