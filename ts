@@ -787,3 +787,78 @@ export async function sendTrialEmail(
     data: { userId, stage, sentAt: new Date() },
   });
 }
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { sendTrialEmail } from "@/lib/emails/sequences";
+
+export const dynamic = "force-dynamic";
+
+const DAY = 864e5;
+
+export async function GET(req: NextRequest) {
+  if (req.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: "unauth" }, { status: 401 });
+  }
+
+  const now = Date.now();
+  const targets = await prisma.user.findMany({
+    where: {
+      org: { plan: "TRIAL" },
+    },
+    include: {
+      org: true,
+      emailLogs: true,
+    },
+  });
+
+  const results = { sent: 0, skipped: 0 };
+
+  for (const u of targets) {
+    const created = u.createdAt.getTime();
+    const trialEnd = u.org?.trialEndsAt?.getTime() ?? 0;
+    const ageDays = Math.floor((now - created) / DAY);
+    const daysToEnd = Math.ceil((trialEnd - now) / DAY);
+
+    const alreadySent = (stage: string) =>
+      u.emailLogs.some((l) => l.stage === stage);
+
+    let stage: "day0" | "day1" | "day7" | "day12" | "day14" | null = null;
+    if (ageDays >= 0 && !alreadySent("day0")) stage = "day0";
+    else if (ageDays >= 1 && !alreadySent("day1")) stage = "day1";
+    else if (daysToEnd <= 7 && daysToEnd > 2 && !alreadySent("day7")) stage = "day7";
+    else if (daysToEnd <= 2 && daysToEnd > 0 && !alreadySent("day12")) stage = "day12";
+    else if (trialEnd <= now && !alreadySent("day14")) stage = "day14";
+
+    if (!stage) {
+      results.skipped++;
+      continue;
+    }
+
+    try {
+      await sendTrialEmail(u.id, u.email, u.name ?? "", stage);
+      results.sent++;
+    } catch (e) {
+      console.error("email failed", u.email, stage, e);
+    }
+  }
+
+  return NextResponse.json(results);
+}import { sendTrialEmail } from "@/lib/emails/sequences";
+import { resend, FROM } from "@/lib/emails/send";
+import { TEMPLATES } from "@/lib/emails/templates";
+
+// after updating org...
+const owner = await prisma.user.findFirst({ where: { orgId: s.metadata.orgId, role: "OWNER" } });
+if (owner) {
+  const plan = s.metadata.plan as "STARTER" | "PRO";
+  await resend.emails.send({
+    from: FROM,
+    to: owner.email,
+    subject: `You're on Utens ${plan} 🎉`,
+    html: TEMPLATES.converted(
+      (owner.name ?? "there").split(" ")[0],
+      plan,
+      `${process.env.NEXTAUTH_URL}/dashboard`
+    ),
+  });
+}
