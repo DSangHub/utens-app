@@ -1,0 +1,31 @@
+utens-app/
+├── prisma/
+│   └── schema.prisma
+├── src/
+│   ├── app/
+│   │   ├── (auth)/
+│   │   │   ├── login/page.tsx
+│   │   │   └── signup/page.tsx
+│   │   ├── (dashboard)/
+│   │   │   ├── dashboard/page.tsx
+│   │   │   ├── inbox/page.tsx
+│   │   │   ├── scripts/page.tsx
+│   │   │   ├── analytics/page.tsx
+│   │   │   ├── integrations/page.tsx
+│   │   │   └── billing/page.tsx
+│   │   ├── api/
+│   │   │   ├── ai/respond/route.ts
+│   │   │   ├── comments/route.ts
+│   │   │   ├── escalate/route.ts
+│   │   │   ├── stripe/webhook/route.ts
+│   │   │   └── webhooks/[platform]/route.ts
+│   │   └── layout.tsx
+│   ├── components/
+│   ├── lib/
+│   │   ├── ai.ts
+│   │   ├── stripe.ts
+│   │   ├── twilio.ts
+│   │   └── db.ts
+│   └── types/
+├── package.json
+└── .env
