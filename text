@@ -28,4 +28,27 @@ utens-app/
 │   │   └── db.ts
 │   └── types/
 ├── package.json
-└── .env
+└── .envDATABASE_URL=postgresql://...
+OPENAI_API_KEY=sk-...
+STRIPE_SECRET_KEY=sk_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+TWILIO_SID=AC...
+TWILIO_TOKEN=...
+TWILIO_NUMBER=+1...
+RESEND_API_KEY=re_...
+NEXTAUTH_SECRET=...src/app/
+├── page.tsx                 # Landing page
+├── layout.tsx
+├── pricing/page.tsx         # (optional standalone)
+└── components/
+    ├── Nav.tsx
+    ├── Hero.tsx
+    ├── LogoCloud.tsx
+    ├── Problem.tsx
+    ├── Features.tsx
+    ├── HowItWorks.tsx
+    ├── Pricing.tsx
+    ├── Testimonials.tsx
+    ├── FAQ.tsx
+    ├── CTA.tsx
+    └── Footer.tsx
