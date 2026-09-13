@@ -118,3 +118,7 @@ src/lib/emails/
 src/app/api/cron/trial-emails/route.tsCRON_SECRET=<random-32-char>
 RESEND_API_KEY=re_xxx
 NEXTAUTH_URL=https://utens.app
+RESEND_API_KEY=re_xxx
+CRON_SECRET=<random>
+STRIPE_PRICE_OVERAGE=price_xxx
+PURCHASE_WEBHOOK_SECRET=<random>
