@@ -526,3 +526,105 @@ export async function DELETE(_: NextRequest, { params }: { params: { id: string 
   await prisma.product.delete({ where: { id: params.id } });
   return NextResponse.json({ ok: true });
 }
+import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+
+export async function GET(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ error: "unauth" }, { status: 401 });
+
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: session.user.id } });
+  if (!user.orgId) return NextResponse.json({ conversations: [] });
+
+  const outcome = req.nextUrl.searchParams.get("outcome");
+  const search = req.nextUrl.searchParams.get("q");
+
+  const conversations = await prisma.conversation.findMany({
+    where: {
+      orgId: user.orgId,
+      ...(outcome && outcome !== "ALL" ? { outcome: outcome as any } : {}),
+      ...(search
+        ? {
+            comment: {
+              OR: [
+                { content: { contains: search, mode: "insensitive" } },
+                { authorName: { contains: search, mode: "insensitive" } },
+              ],
+            },
+          }
+        : {}),
+    },
+    include: {
+      comment: {
+        include: { profile: true },
+      },
+      messages: { orderBy: { createdAt: "desc" }, take: 1 },
+      _count: { select: { messages: true } },
+    },
+    orderBy: { updatedAt: "desc" },
+    take: 100,
+  });
+
+  return NextResponse.json({
+    conversations: conversations.map((c) => ({
+      id: c.id,
+      outcome: c.outcome,
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
+      purchaseAt: c.purchaseAt,
+      messageCount: c._count.messages,
+      lastMessage: c.messages[0]?.content ?? "",
+      comment: {
+        authorName: c.comment.authorName,
+        authorHandle: c.comment.authorHandle,
+        content: c.comment.content,
+        platform: c.comment.profile.platform,
+      },
+    })),
+  });
+}import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+
+export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ error: "unauth" }, { status: 401 });
+
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: session.user.id } });
+  const conv = await prisma.conversation.findUniqueOrThrow({
+    where: { id: params.id },
+    include: {
+      comment: { include: { profile: true } },
+      messages: { orderBy: { createdAt: "asc" } },
+      org: { include: { products: true } },
+    },
+  });
+
+  if (conv.orgId !== user.orgId) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+
+  return NextResponse.json({
+    conversation: {
+      id: conv.id,
+      outcome: conv.outcome,
+      purchaseAt: conv.purchaseAt,
+      createdAt: conv.createdAt,
+      comment: {
+        authorName: conv.comment.authorName,
+        authorHandle: conv.comment.authorHandle,
+        content: conv.comment.content,
+        platform: conv.comment.profile.platform,
+      },
+      messages: conv.messages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        createdAt: m.createdAt,
+      })),
+    },
+  });
+}
