@@ -89,4 +89,6 @@ Comment → Classify → Match script → Reply → DoneComment → Classify →
         → Handles objections ("too expensive", "does it work?")
         → Sends checkout link
         → Follows up in 24h if no purchase
-        → Tracks conversion in dashboard
+        → Tracks conversion in dashboard STRIPE_PRICE_STARTER=price_xxx
+STRIPE_PRICE_PRO=price_yyy
+TRIAL_DAYS=14
