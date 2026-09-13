@@ -1272,3 +1272,34 @@ export default function Page() {
             </div>
             <div className="mt-1 text-xs text-gray-500">{p.tagline}</div>
             <ul className="mt-4 space-y-1 text-xs text-gray-600">
+"use client";
+import { useEffect, useState } from "react";
+import Link from "next/link";
+
+export default function TrialBanner() {
+  const [days, setDays] = useState<number | null>(null);
+
+  useEffect(() => {
+    fetch("/api/me/access")
+      .then((r) => r.json())
+      .then((d) => setDays(d.trialDaysLeft ?? null));
+  }, []);
+
+  if (days === null || days === 0) return null;
+
+  return (
+    <div className="bg-gradient-to-r from-indigo-600 to-cyan-500 text-white text-sm">
+      <div className="max-w-7xl mx-auto px-6 py-2.5 flex items-center justify-between">
+        <span>
+          🎉 <strong>{days} day{days !== 1 && "s"} left</strong> in your free trial — full Pro access unlocked.
+        </span>
+        <Link
+          href="/billing"
+          className="rounded-lg bg-white/20 hover:bg-white/30 px-3 py-1 text-xs font-semibold transition"
+        >
+          Upgrade now →
+        </Link>
+      </div>
+    </div>
+  );
+}
