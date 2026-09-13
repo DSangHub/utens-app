@@ -52,3 +52,33 @@ NEXTAUTH_SECRET=...src/app/
     ├── FAQ.tsx
     ├── CTA.tsx
     └── Footer.tsx
+/signup  →  /onboarding
+              ├── 1. Account (name, email, password)
+              ├── 2. Organization (brand name, industry)
+              ├── 3. Connect profile (OAuth: IG, FB, TikTok…)
+              ├── 4. Scripts (paste or use templates)
+              ├── 5. Escalation (SMS/email for host)
+              ├── 6. Plan (Free / Starter / Pro)
+              └── 7. Done → /dashboard 🎉src/app/
+├── (auth)/
+│   ├── signup/page.tsx
+│   └── login/page.tsx
+├── onboarding/
+│   ├── layout.tsx              # wizard shell + progress
+│   ├── step-1-account/page.tsx
+│   ├── step-2-organization/page.tsx
+│   ├── step-3-connect/page.tsx
+│   ├── step-4-scripts/page.tsx
+│   ├── step-5-escalation/page.tsx
+│   ├── step-6-plan/page.tsx
+│   └── step-7-done/page.tsx
+├── api/
+│   ├── auth/[...nextauth]/route.ts
+│   ├── onboarding/save/route.ts
+│   ├── oauth/[platform]/route.ts
+│   └── oauth/[platform]/callback/route.ts
+└── components/onboarding/
+    ├── ProgressBar.tsx
+    ├── StepShell.tsx
+    ├── Input.tsx
+    └── TemplatePicker.tsx
