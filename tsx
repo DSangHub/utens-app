@@ -1534,3 +1534,427 @@ export default function UpgradeButton({ plan, label }: { plan: string; label: st
     </button>
   );
 }
+import Link from "next/link";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+import { getOrgAccess } from "@/lib/trial";
+import ProductRow from "./product-row";
+
+export default async function ProductsPage() {
+  const session = await getServerSession(authOptions);
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: session!.user.id },
+    include: { org: true },
+  });
+
+  if (!user.orgId) {
+    return <Empty title="Set up your brand first" cta={{ href: "/onboarding/step-2-organization", label: "Complete setup" }} />;
+  }
+
+  const access = await getOrgAccess(user.orgId);
+  const products = await prisma.product.findMany({
+    where: { orgId: user.orgId },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const locked = !access.limits.deepMode;
+
+  return (
+    <div className="max-w-6xl mx-auto p-8">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Product Catalog</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            The AI promotes these products during extended Pro conversations.
+          </p>
+        </div>
+        {!locked && (
+          <Link
+            href="/products/new"
+            className="rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2.5 transition"
+          >
+            + Add product
+          </Link>
+        )}
+      </div>
+
+      {locked && (
+        <div className="mt-6 rounded-2xl bg-gradient-to-r from-indigo-600 to-cyan-500 text-white p-6">
+          <h2 className="font-semibold text-lg">🔒 Pro feature</h2>
+          <p className="text-sm text-indigo-50 mt-1">
+            Upgrade to Pro ($49.95/mo) to unlock the product catalog and let AI guide customers to checkout.
+          </p>
+          <Link
+            href="/billing"
+            className="inline-block mt-4 rounded-lg bg-white text-indigo-700 font-semibold text-sm px-4 py-2 hover:bg-indigo-50 transition"
+          >
+            Upgrade to Pro →
+          </Link>
+        </div>
+      )}
+
+      <div className="mt-8 rounded-2xl border border-gray-200 bg-white overflow-hidden">
+        {products.length === 0 ? (
+          <div className="p-12 text-center">
+            <div className="text-4xl">📦</div>
+            <h3 className="mt-3 font-semibold text-gray-900">No products yet</h3>
+            <p className="text-sm text-gray-500 mt-1">
+              Add your first product so the AI knows what to recommend.
+            </p>
+            <Link
+              href="/products/new"
+              className="inline-block mt-5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2.5"
+            >
+              Add your first product
+            </Link>
+          </div>
+        ) : (
+          <table className="w-full">
+            <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+              <tr>
+                <th className="text-left px-5 py-3 font-medium">Product</th>
+                <th className="text-left px-5 py-3 font-medium">Price</th>
+                <th className="text-left px-5 py-3 font-medium">Keywords</th>
+                <th className="text-right px-5 py-3 font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {products.map((p) => (
+                <ProductRow
+                  key={p.id}
+                  product={{
+                    id: p.id,
+                    name: p.name,
+                    description: p.description,
+                    price: Number(p.price),
+                    url: p.url,
+                    imageUrl: p.imageUrl,
+                    keywords: p.keywords,
+                  }}
+                />
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Empty({ title, cta }: { title: string; cta: { href: string; label: string } }) {
+  return (
+    <div className="max-w-6xl mx-auto p-8 text-center">
+      <h1 className="text-xl font-bold text-gray-900">{title}</h1>
+      <Link
+        href={cta.href}
+        className="inline-block mt-4 rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm font-semibold"
+      >
+        {cta.label}
+      </Link>
+    </div>
+  );
+}"use client";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+
+type P = {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  url: string | null;
+  imageUrl: string | null;
+  keywords: string[];
+};
+
+export default function ProductRow({ product }: { product: P }) {
+  const router = useRouter();
+  const [deleting, setDeleting] = useState(false);
+
+  async function del() {
+    if (!confirm(`Delete "${product.name}"?`)) return;
+    setDeleting(true);
+    await fetch(`/api/products/${product.id}`, { method: "DELETE" });
+    router.refresh();
+  }
+
+  return (
+    <tr className="hover:bg-gray-50">
+      <td className="px-5 py-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-gray-100 overflow-hidden grid place-items-center">
+            {product.imageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={product.imageUrl} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <span className="text-gray-400">📦</span>
+            )}
+          </div>
+          <div>
+            <div className="font-medium text-gray-900">{product.name}</div>
+            <div className="text-xs text-gray-500 line-clamp-1 max-w-xs">{product.description}</div>
+          </div>
+        </div>
+      </td>
+      <td className="px-5 py-4 text-sm text-gray-900 font-medium">${product.price.toFixed(2)}</td>
+      <td className="px-5 py-4">
+        <div className="flex flex-wrap gap-1 max-w-xs">
+          {product.keywords.slice(0, 3).map((k) => (
+            <span key={k} className="rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-medium px-2 py-0.5">
+              {k}
+            </span>
+          ))}
+          {product.keywords.length > 3 && (
+            <span className="text-[10px] text-gray-500">+{product.keywords.length - 3}</span>
+          )}
+        </div>
+      </td>
+      <td className="px-5 py-4 text-right">
+        <div className="inline-flex gap-2">
+          <Link
+            href={`/products/${product.id}`}
+            className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
+          >
+            Edit
+          </Link>
+          <button
+            onClick={del}
+            disabled={deleting}
+            className="text-sm text-red-500 hover:text-red-600 font-medium disabled:opacity-50"
+          >
+            {deleting ? "Deleting…" : "Delete"}
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+}"use client";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+
+type Props = {
+  initial?: {
+    id?: string;
+    name: string;
+    description: string;
+    price: number;
+    url: string | null;
+    imageUrl: string | null;
+    keywords: string[];
+  };
+};
+
+export default function ProductForm({ initial }: Props) {
+  const router = useRouter();
+  const [form, setForm] = useState({
+    name: initial?.name ?? "",
+    description: initial?.description ?? "",
+    price: initial?.price ?? 0,
+    url: initial?.url ?? "",
+    imageUrl: initial?.imageUrl ?? "",
+    keywords: initial?.keywords.join(", ") ?? "",
+  });
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setErr(null);
+
+    const payload = {
+      name: form.name,
+      description: form.description,
+      price: Number(form.price),
+      url: form.url || null,
+      imageUrl: form.imageUrl || null,
+      keywords: form.keywords.split(",").map((k) => k.trim()).filter(Boolean),
+    };
+
+    const res = await fetch(
+      initial?.id ? `/api/products/${initial.id}` : "/api/products",
+      {
+        method: initial?.id ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }
+    );
+
+    setLoading(false);
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setErr(d.error ?? "Something went wrong");
+      return;
+    }
+    router.push("/products");
+    router.refresh();
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-5">
+      <Field label="Product name" required>
+        <input
+          required
+          value={form.name}
+          onChange={(e) => setForm({ ...form, name: e.target.value })}
+          placeholder="Glow Serum 30ml"
+          className="input"
+        />
+      </Field>
+
+      <Field label="Description" hint="AI uses this to pitch the product." required>
+        <textarea
+          required
+          rows={3}
+          value={form.description}
+          onChange={(e) => setForm({ ...form, description: e.target.value })}
+          placeholder="Vitamin C serum that brightens skin in 2 weeks. Dermatologist-tested, vegan."
+          className="input resize-none"
+        />
+      </Field>
+
+      <div className="grid sm:grid-cols-2 gap-4">
+        <Field label="Price (USD)" required>
+          <input
+            required
+            type="number"
+            step="0.01"
+            min="0"
+            value={form.price}
+            onChange={(e) => setForm({ ...form, price: Number(e.target.value) })}
+            className="input"
+          />
+        </Field>
+        <Field label="Checkout URL" hint="Where AI sends buyers.">
+          <input
+            type="url"
+            value={form.url ?? ""}
+            onChange={(e) => setForm({ ...form, url: e.target.value })}
+            placeholder="https://yourshop.com/glow-serum"
+            className="input"
+          />
+        </Field>
+      </div>
+
+      <Field label="Image URL" hint="Shown in the dashboard only.">
+        <input
+          type="url"
+          value={form.imageUrl ?? ""}
+          onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
+          placeholder="https://cdn.yourshop.com/glow.jpg"
+          className="input"
+        />
+      </Field>
+
+      <Field label="Keywords" hint="Comma-separated — helps AI match comments to this product.">
+        <input
+          value={form.keywords}
+          onChange={(e) => setForm({ ...form, keywords: e.target.value })}
+          placeholder="serum, vitamin c, brightening, skin"
+          className="input"
+        />
+      </Field>
+
+      {err && <p className="text-sm text-red-600">{err}</p>}
+
+      <div className="flex items-center gap-3 pt-2">
+        <button
+          type="submit"
+          disabled={loading}
+          className="rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white font-semibold px-5 py-2.5 transition"
+        >
+          {loading ? "Saving…" : initial?.id ? "Save changes" : "Add product"}
+        </button>
+        <button
+          type="button"
+          onClick={() => router.push("/products")}
+          className="text-sm text-gray-500 hover:text-gray-900"
+        >
+          Cancel
+        </button>
+      </div>
+
+      <style jsx>{`
+        :global(.input) {
+          width: 100%;
+          border-radius: 0.5rem;
+          border: 1px solid #e5e7eb;
+          padding: 0.625rem 0.75rem;
+          font-size: 0.875rem;
+          outline: none;
+        }
+        :global(.input:focus) {
+          border-color: #6366f1;
+          box-shadow: 0 0 0 4px rgba(99,102,241,0.12);
+        }
+      `}</style>
+    </form>
+  );
+}
+
+function Field({
+  label, hint, required, children,
+}: {
+  label: string; hint?: string; required?: boolean; children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-gray-700">
+          {label} {required && <span className="text-red-500">*</span>}
+        </span>
+        {hint && <span className="text-xs text-gray-400">{hint}</span>}
+      </div>
+      <div className="mt-1">{children}</div>
+    </label>
+  );
+}import ProductForm from "../product-form";
+
+export default function NewProduct() {
+  return (
+    <div className="max-w-2xl mx-auto p-8">
+      <h1 className="text-2xl font-bold text-gray-900">Add product</h1>
+      <p className="text-sm text-gray-500 mt-1">
+        The AI will recommend this product during extended conversations.
+      </p>
+      <div className="mt-8 rounded-2xl border border-gray-200 bg-white p-6">
+        <ProductForm />
+      </div>
+    </div>
+  );
+}import { notFound } from "next/navigation";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+import ProductForm from "../product-form";
+
+export default async function EditProduct({ params }: { params: { id: string } }) {
+  const session = await getServerSession(authOptions);
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: session!.user.id },
+  });
+
+  const product = await prisma.product.findUnique({ where: { id: params.id } });
+  if (!product || product.orgId !== user.orgId) notFound();
+
+  return (
+    <div className="max-w-2xl mx-auto p-8">
+      <h1 className="text-2xl font-bold text-gray-900">Edit product</h1>
+      <div className="mt-8 rounded-2xl border border-gray-200 bg-white p-6">
+        <ProductForm
+          initial={{
+            id: product.id,
+            name: product.name,
+            description: product.description,
+            price: Number(product.price),
+            url: product.url,
+            imageUrl: product.imageUrl,
+            keywords: product.keywords,
+          }}
+        />
+      </div>
+    </div>
+  );
+}
