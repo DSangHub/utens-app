@@ -260,3 +260,144 @@ export async function getOrgAccess(orgId: string) {
       : 0,
   };
 }
+import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+import { getOrgAccess } from "@/lib/trial";
+
+export async function GET() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({}, { status: 401 });
+
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: session.user.id },
+  });
+  if (!user.orgId) return NextResponse.json({ plan: "TRIAL", trialDaysLeft: 0 });
+
+  const access = await getOrgAccess(user.orgId);
+  return NextResponse.json(access);
+}export async function deepConversationTurn({
+  history,
+  products,
+  brandVoice,
+}: {
+  history: { role: "customer" | "ai" | "host"; content: string }[];
+  products: { name: string; description: string; price: number; url?: string }[];
+  brandVoice: string;
+}) {
+  const catalog = products
+    .map((p) => `- ${p.name} ($${p.price}): ${p.description}${p.url ? ` — ${p.url}` : ""}`)
+    .join("\n");
+
+  const res = await openai.chat.completions.create({
+    model: "gpt-4o",
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: `You are a sales-savvy brand assistant for a ${brandVoice} brand.
+Your goal: keep the customer engaged, answer follow-ups, overcome objections, and guide them to purchase.
+
+Catalog:
+${catalog}
+
+Return JSON:
+{
+  "reply": string,               // next message to customer (max 3 sentences)
+  "recommendedProduct": string?, // product name if relevant
+  "nextStep": "ask_question" | "recommend" | "send_link" | "close" | "handoff",
+  "conversionConfidence": number // 0-1 chance they'll buy
+}
+
+Rules:
+- Never invent products. Only reference catalog.
+- If customer is angry, complex, or asks about legal/refunds → nextStep = "handoff".
+- If interest is high and product matched → nextStep = "send_link".
+- Keep tone human, warm, not pushy.`,
+      },
+      ...history.map((m) => ({
+        role: m.role === "customer" ? "user" : "assistant",
+        content: m.content,
+      })),
+    ],
+  });
+
+  return JSON.parse(res.choices[0].message.content!);
+}import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { getOrgAccess } from "@/lib/trial";
+import { deepConversationTurn } from "@/lib/ai";
+import { postReply } from "@/lib/platforms";
+import { escalateToHost } from "@/lib/twilio";
+
+export async function POST(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const { customerMessage } = await req.json();
+  const conv = await prisma.conversation.findUniqueOrThrow({
+    where: { id: params.id },
+    include: {
+      comment: { include: { profile: true } },
+      org: { include: { products: true, scripts: true } },
+      messages: { orderBy: { createdAt: "asc" } },
+    },
+  });
+
+  const access = await getOrgAccess(conv.orgId);
+  if (!access.limits.deepMode) {
+    return NextResponse.json({ error: "Deep mode requires Pro plan" }, { status: 402 });
+  }
+
+  // Save customer's message
+  await prisma.conversationMessage.create({
+    data: { conversationId: conv.id, role: "customer", content: customerMessage },
+  });
+
+  const history = [
+    ...conv.messages.map((m) => ({ role: m.role as any, content: m.content })),
+    { role: "customer" as const, content: customerMessage },
+  ];
+
+  const turn = await deepConversationTurn({
+    history,
+    products: conv.org.products.map((p) => ({
+      name: p.name,
+      description: p.description,
+      price: Number(p.price),
+      url: p.url ?? undefined,
+    })),
+    brandVoice: conv.org.brandVoice ?? "friendly",
+  });
+
+  // Save AI message
+  await prisma.conversationMessage.create({
+    data: { conversationId: conv.id, role: "ai", content: turn.reply },
+  });
+
+  // Handle next step
+  if (turn.nextStep === "handoff") {
+    await escalateToHost({
+      email: conv.comment.profile.escalationEmail,
+      phone: conv.comment.profile.escalationPhone,
+      comment: { authorName: conv.comment.authorName, content: customerMessage, intent: "deep_handoff" },
+      suggestedReply: turn.reply,
+      confidence: turn.conversionConfidence,
+      commentId: conv.commentId,
+    });
+    await prisma.conversation.update({
+      where: { id: conv.id },
+      data: { outcome: "HANDED_OFF" },
+    });
+  } else {
+    await postReply(
+      conv.comment.profile.platform,
+      conv.comment.profile.accessToken!,
+      conv.comment.externalId,
+      turn.reply
+    );
+  }
+
+  return NextResponse.json(turn);
+}
