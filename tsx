@@ -597,3 +597,266 @@ export default function Page() {
   );
 }
 }
+import { redirect } from "next/navigation";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+import ProgressBar from "@/components/onboarding/ProgressBar";
+
+export default async function OnboardingLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) redirect("/signup");
+
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+  });
+  if (user?.onboardDone) redirect("/dashboard");
+
+  const step = user?.onboardStep ?? 1;
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <header className="border-b bg-white">
+        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2 font-bold text-lg">
+            <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-600 to-cyan-400 grid place-items-center text-white text-sm">
+              U
+            </span>
+            Utens<span className="text-indigo-600">.app</span>
+          </div>
+          <a href="/api/auth/signout" className="text-sm text-gray-500 hover:text-gray-800">
+            Save & exit
+          </a>
+        </div>
+      </header>
+
+      <div className="max-w-2xl mx-auto px-6 py-10">
+        <ProgressBar current={step} total={7} />
+        <div className="mt-10 bg-white rounded-2xl border border-gray-100 shadow-sm p-8">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}export default function ProgressBar({ current, total }: { current: number; total: number }) {
+  const pct = Math.round((current / total) * 100);
+  return (
+    <div>
+      <div className="flex justify-between text-xs text-gray-500 mb-2">
+        <span>Step {current} of {total}</span>
+        <span>{pct}%</span>
+      </div>
+      <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+        <div
+          className="h-full bg-gradient-to-r from-indigo-600 to-cyan-500 transition-all duration-500"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}"use client";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+
+type Props = {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+  nextHref: string;
+  backHref?: string;
+  onNext?: () => Promise<void> | void;
+  nextLabel?: string;
+  skipHref?: string;
+};
+
+export default function StepShell({
+  title, subtitle, children, nextHref, backHref, onNext,
+  nextLabel = "Continue", skipHref,
+}: Props) {
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+
+  async function handleNext() {
+    setLoading(true);
+    try {
+      if (onNext) await onNext();
+      router.push(nextHref);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div>
+      <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
+      {subtitle && <p className="mt-2 text-gray-600">{subtitle}</p>}
+
+      <div className="mt-6 space-y-5">{children}</div>
+
+      <div className="mt-8 flex items-center justify-between">
+        {backHref ? (
+          <button
+            onClick={() => router.push(backHref)}
+            className="text-sm text-gray-500 hover:text-gray-900"
+          >
+            ← Back
+          </button>
+        ) : <span />}
+
+        <div className="flex items-center gap-3">
+          {skipHref && (
+            <button
+              onClick={() => router.push(skipHref)}
+              className="text-sm text-gray-500 hover:text-gray-900"
+            >
+              Skip for now
+            </button>
+          )}
+          <button
+            onClick={handleNext}
+            disabled={loading}
+            className="rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white font-semibold px-6 py-2.5 transition"
+          >
+            {loading ? "Saving…" : nextLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}"use client";
+import { useState } from "react";
+import { signIn } from "next-auth/react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+
+export default function SignupPage() {
+  const router = useRouter();
+  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setErr(null);
+    const res = await fetch("/api/auth/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      setErr(data.error ?? "Something went wrong");
+      setLoading(false);
+      return;
+    }
+    // auto-login
+    await signIn("credentials", {
+      email: form.email,
+      password: form.password,
+      redirect: false,
+    });
+    router.push("/onboarding/step-1-account");
+  }
+
+  return (
+    <div className="min-h-screen grid lg:grid-cols-2">
+      {/* Left: form */}
+      <div className="flex items-center justify-center p-8">
+        <div className="w-full max-w-sm">
+          <Link href="/" className="flex items-center gap-2 font-bold text-lg mb-8">
+            <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-600 to-cyan-400 grid place-items-center text-white">
+              U
+            </span>
+            Utens<span className="text-indigo-600">.app</span>
+          </Link>
+
+          <h1 className="text-2xl font-bold text-gray-900">Create your account</h1>
+          <p className="text-sm text-gray-500 mt-1">Free forever. No credit card.</p>
+
+          <form onSubmit={submit} className="mt-6 space-y-4">
+            <Input label="Full name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} required />
+            <Input label="Work email" type="email" value={form.email} onChange={(v) => setForm({ ...form, email: v })} required />
+            <Input label="Password" type="password" value={form.password} onChange={(v) => setForm({ ...form, password: v })} required minLength={8} />
+
+            {err && <p className="text-sm text-red-600">{err}</p>}
+
+            <button
+              disabled={loading}
+              className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white font-semibold py-2.5 transition"
+            >
+              {loading ? "Creating…" : "Create account"}
+            </button>
+          </form>
+
+          <div className="my-6 flex items-center gap-3 text-xs text-gray-400">
+            <div className="flex-1 h-px bg-gray-200" /> OR <div className="flex-1 h-px bg-gray-200" />
+          </div>
+
+          <div className="space-y-2">
+            <OAuthBtn provider="google" label="Continue with Google" />
+            <OAuthBtn provider="facebook" label="Continue with Facebook" />
+          </div>
+
+          <p className="mt-6 text-sm text-gray-500 text-center">
+            Already have an account?{" "}
+            <Link href="/login" className="text-indigo-600 font-semibold">Log in</Link>
+          </p>
+        </div>
+      </div>
+
+      {/* Right: value prop */}
+      <div className="hidden lg:flex items-center justify-center bg-gradient-to-br from-indigo-600 to-cyan-500 text-white p-12">
+        <div className="max-w-md">
+          <h2 className="text-3xl font-bold">Set up in 5 minutes.</h2>
+          <ul className="mt-8 space-y-4 text-indigo-50">
+            <li>✅ AI replies to comments with your scripts</li>
+            <li>✅ Smart escalation to your phone</li>
+            <li>✅ Works on IG, FB, TikTok, YouTube & more</li>
+            <li>✅ 20× cheaper than a hire</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Input({
+  label, value, onChange, type = "text", required, minLength,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  type?: string;
+  required?: boolean;
+  minLength?: number;
+}) {
+  return (
+    <label className="block">
+      <span className="text-sm font-medium text-gray-700">{label}</span>
+      <input
+        type={type}
+        value={value}
+        required={required}
+        minLength={minLength}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-1 w-full rounded-lg border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none px-3 py-2.5 text-sm"
+      />
+    </label>
+  );
+}
+
+function OAuthBtn({ provider, label }: { provider: string; label: string }) {
+  return (
+    <button
+      onClick={() => signIn(provider, { callbackUrl: "/onboarding/step-1-account" })}
+      className="w-full rounded-xl border border-gray-200 hover:bg-gray-50 py-2.5 text-sm font-medium text-gray-700 transition"
+    >
+      {label}
+    </button>
+  );
+}
