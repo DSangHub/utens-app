@@ -1036,5 +1036,239 @@ export default function Page() {
         })}
       </div>
     </StepShell>
+  );"use client";
+import { useState } from "react";
+import StepShell from "@/components/onboarding/StepShell";
+
+const TEMPLATES: Record<string, { intent: string; response: string }[]> = {
+  ecommerce: [
+    { intent: "shipping", response: "We ship within 24 hours and typically deliver in 3–5 business days. Free over $75!" },
+    { intent: "returns", response: "You can return any item within 30 days for a full refund — no questions asked." },
+    { intent: "sizing", response: "Our sizes run true to fit. If unsure, size up — we offer free exchanges." },
+    { intent: "discount", response: "Use code WELCOME10 for 10% off your first order 💛" },
+  ],
+  creator: [
+    { intent: "collab", response: "Thanks for reaching out! Please email collabs@yourname.com with your media kit." },
+    { intent: "product", response: "Link is in my bio! Use my code for a discount." },
+    { intent: "fan_love", response: "You just made my day 🥹 Thank you!" },
+  ],
+  saas: [
+    { intent: "pricing", response: "Plans start at $29/mo. Full pricing at yoursite.com/pricing" },
+    { intent: "trial", response: "Yes! 14-day free trial, no credit card required." },
+    { intent: "support", response: "Sorry you're stuck — email support@yoursite.com and we'll jump in within an hour." },
+  ],
+};
+
+export default function Page() {
+  const [template, setTemplate] = useState<keyof typeof TEMPLATES>("ecommerce");
+  const [scripts, setScripts] = useState(TEMPLATES.ecommerce);
+
+  function applyTemplate(t: keyof typeof TEMPLATES) {
+    setTemplate(t);
+    setScripts(TEMPLATES[t]);
+  }
+
+  return (
+    <StepShell
+      title="Teach your AI what to say"
+      subtitle="Pick a starter template or write your own. Edit anytime."
+      nextHref="/onboarding/step-5-escalation"
+      backHref="/onboarding/step-3-connect"
+      onNext={async () => {
+        await fetch("/api/onboarding/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ step: 4, scripts }),
+        });
+      }}
+    >
+      <div className="flex flex-wrap gap-2">
+        {Object.keys(TEMPLATES).map((t) => (
+          <button
+            key={t}
+            onClick={() => applyTemplate(t as any)}
+            className={`rounded-full px-4 py-1.5 text-sm capitalize border transition ${
+              template === t
+                ? "bg-indigo-600 text-white border-indigo-600"
+                : "bg-white border-gray-200 text-gray-700 hover:border-gray-300"
+            }`}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
+      <div className="space-y-3 mt-4">
+        {scripts.map((s, i) => (
+          <div key={i} className="rounded-xl border border-gray-200 p-3">
+            <input
+              value={s.intent}
+              onChange={(e) => {
+                const next = [...scripts];
+                next[i].intent = e.target.value;
+                setScripts(next);
+              }}
+              className="w-full text-xs font-semibold uppercase tracking-wider text-indigo-600 border-none outline-none"
+            />
+            <textarea
+              value={s.response}
+              onChange={(e) => {
+                const next = [...scripts];
+                next[i].response = e.target.value;
+                setScripts(next);
+              }}
+              rows={2}
+              className="mt-1 w-full text-sm border-none outline-none resize-none"
+            />
+          </div>
+        ))}
+        <button
+          onClick={() => setScripts([...scripts, { intent: "new_intent", response: "" }])}
+          className="text-sm text-indigo-600 font-semibold hover:underline"
+        >
+          + Add another script
+        </button>
+      </div>
+    </StepShell>
   );
 }
+}"use client";
+import { useState } from "react";
+import StepShell from "@/components/onboarding/StepShell";
+
+export default function Page() {
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [channel, setChannel] = useState<"sms" | "email" | "both">("sms");
+
+  return (
+    <StepShell
+      title="Where should we ping you?"
+      subtitle="When the AI isn't sure, we'll send you a suggested reply here."
+      nextHref="/onboarding/step-6-plan"
+      backHref="/onboarding/step-4-scripts"
+      skipHref="/onboarding/step-6-plan"
+      onNext={async () => {
+        await fetch("/api/onboarding/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ step: 5, escalationPhone: phone, escalationEmail: email, channel }),
+        });
+      }}
+    >
+      <div className="grid grid-cols-3 gap-2">
+        {(["sms", "email", "both"] as const).map((c) => (
+          <button
+            key={c}
+            onClick={() => setChannel(c)}
+            className={`rounded-xl border py-3 text-sm font-medium capitalize transition ${
+              channel === c
+                ? "border-indigo-600 bg-indigo-50 text-indigo-700"
+                : "border-gray-200 text-gray-700 hover:border-gray-300"
+            }`}
+          >
+            {c === "sms" ? "📱 SMS" : c === "email" ? "✉️ Email" : "🔔 Both"}
+          </button>
+        ))}
+      </div>
+
+      {(channel === "sms" || channel === "both") && (
+        <label className="block">
+          <span className="text-sm font-medium text-gray-700">Mobile number</span>
+          <input
+            type="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="+1 555 123 4567"
+            className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm"
+          />
+        </label>
+      )}
+
+      {(channel === "email" || channel === "both") && (
+        <label className="block">
+          <span className="text-sm font-medium text-gray-700">Escalation email</span>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@brand.com"
+            className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm"
+          />
+        </label>
+      )}
+
+      <div className="rounded-xl bg-indigo-50 border border-indigo-100 p-4 text-sm text-indigo-800">
+        💡 <strong>How escalation works:</strong> If confidence is below 70% or the comment is
+        a complaint, we'll send you the message + a suggested reply. Meanwhile, the customer
+        gets a warm holding message so they know you're on it.
+      </div>
+    </StepShell>
+  );
+}"use client";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import StepShell from "@/components/onboarding/StepShell";
+
+const PLANS = [
+  { id: "FREE", name: "Free", price: "$0", tagline: "Try it out", features: ["100 replies/mo", "1 profile", "Email escalation"] },
+  { id: "STARTER", name: "Starter", price: "$29", tagline: "Solo founders", features: ["2,000 replies/mo", "3 profiles", "SMS + email"] },
+  { id: "PRO", name: "Pro", price: "$99", tagline: "Growing brands", features: ["15,000 replies/mo", "10 profiles", "Priority SMS"], popular: true },
+];
+
+export default function Page() {
+  const router = useRouter();
+  const [selected, setSelected] = useState("FREE");
+  const [loading, setLoading] = useState(false);
+
+  async function finish() {
+    setLoading(true);
+    if (selected === "FREE") {
+      await fetch("/api/onboarding/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ step: 7, plan: "FREE" }),
+      });
+      router.push("/onboarding/step-7-done");
+    } else {
+      const res = await fetch("/api/stripe/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan: selected }),
+      });
+      const { url } = await res.json();
+      window.location.href = url;
+    }
+  }
+
+  return (
+    <StepShell
+      title="Choose your plan"
+      subtitle="Start free — upgrade anytime."
+      nextHref="/onboarding/step-7-done"
+      backHref="/onboarding/step-5-escalation"
+      onNext={finish}
+      nextLabel={selected === "FREE" ? "Start free" : "Continue to payment"}
+    >
+      <div className="grid sm:grid-cols-3 gap-3">
+        {PLANS.map((p) => (
+          <button
+            key={p.id}
+            onClick={() => setSelected(p.id)}
+            className={`relative rounded-2xl border p-5 text-left transition ${
+              selected === p.id
+                ? "border-indigo-600 bg-indigo-50 ring-2 ring-indigo-200"
+                : "border-gray-200 hover:border-gray-300"
+            }`}
+          >
+            {p.popular && (
+              <span className="absolute -top-2 right-3 text-[10px] font-bold uppercase bg-indigo-600 text-white rounded-full px-2 py-0.5">
+                Popular
+              </span>
+            )}
+            <div className="text-sm font-semibold text-gray-900">{p.name}</div>
+            <div className="mt-1 text-2xl font-bold text-gray-900">
+              {p.price}<span className="text-sm font-normal text-gray-500">/mo</span>
+            </div>
+            <div className="mt-1 text-xs text-gray-500">{p.tagline}</div>
+            <ul className="mt-4 space-y-1 text-xs text-gray-600">
