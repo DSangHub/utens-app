@@ -1303,3 +1303,234 @@ export default function TrialBanner() {
     </div>
   );
 }
+import Link from "next/link";
+
+const plans = [
+  {
+    name: "Free Trial",
+    price: "$0",
+    cadence: "for 14 days",
+    tagline: "Full Pro access. No card required.",
+    features: [
+      "All Pro features unlocked",
+      "Unlimited test replies",
+      "Connect 1 profile",
+      "No credit card needed",
+      "Cancel anytime — auto-expires",
+    ],
+    cta: "Start 14-day trial",
+    highlight: false,
+    badge: "Start here",
+  },
+  {
+    name: "Starter",
+    price: "$19.95",
+    cadence: "/month",
+    tagline: "AI prompt response & comment management",
+    features: [
+      "AI replies with your scripts",
+      "Comments, questions & complaints",
+      "Smart escalation (SMS + email)",
+      "Holding messages while awaiting reply",
+      "3 profiles · 2,000 replies/mo",
+      "Basic analytics",
+    ],
+    cta: "Choose Starter",
+    highlight: false,
+  },
+  {
+    name: "Pro",
+    price: "$49.95",
+    cadence: "/month",
+    tagline: "Deeper analysis + sales conversations",
+    features: [
+      "Everything in Starter, plus:",
+      "Deep sentiment & intent analysis",
+      "Extended AI conversation after comment",
+      "Product promotion & objection handling",
+      "Follow-ups until purchase",
+      "Conversion tracking (comment → sale)",
+      "10 profiles · 15,000 replies/mo",
+      "Priority SMS escalation",
+    ],
+    cta: "Choose Pro",
+    highlight: true,
+    badge: "Most popular",
+  },
+];
+
+export default function Pricing() {
+  return (
+    <section id="pricing" className="py-24 bg-gray-50">
+      <div className="max-w-7xl mx-auto px-6">
+        <div className="text-center max-w-2xl mx-auto">
+          <span className="inline-block rounded-full bg-green-100 text-green-700 text-xs font-semibold px-3 py-1">
+            🎉 2 weeks free — no credit card
+          </span>
+          <h2 className="mt-4 text-4xl font-bold text-gray-900">
+            Start free. Upgrade when it pays for itself.
+          </h2>
+          <p className="mt-4 text-gray-600">
+            Try every Pro feature for 14 days. If Utens doesn't earn its keep, walk away —
+            no charge, no card, no awkward phone call.
+          </p>
+        </div>
+
+        <div className="mt-14 grid md:grid-cols-3 gap-6">
+          {plans.map((p) => (
+            <div
+              key={p.name}
+              className={`relative rounded-2xl p-6 flex flex-col border transition ${
+                p.highlight
+                  ? "bg-indigo-600 text-white border-indigo-600 shadow-2xl lg:scale-105"
+                  : "bg-white border-gray-200"
+              }`}
+            >
+              {p.badge && (
+                <span
+                  className={`self-start text-[10px] font-bold uppercase rounded-full px-2 py-1 mb-3 ${
+                    p.highlight ? "bg-white/20 text-white" : "bg-indigo-50 text-indigo-700"
+                  }`}
+                >
+                  {p.badge}
+                </span>
+              )}
+              <h3 className={`text-lg font-semibold ${p.highlight ? "text-white" : "text-gray-900"}`}>
+                {p.name}
+              </h3>
+              <p className={`text-sm mt-1 ${p.highlight ? "text-indigo-100" : "text-gray-500"}`}>
+                {p.tagline}
+              </p>
+              <div className="mt-5 flex items-end gap-1">
+                <span className="text-4xl font-bold">{p.price}</span>
+                <span className={p.highlight ? "text-indigo-200" : "text-gray-500"}>
+                  {p.cadence}
+                </span>
+              </div>
+              <ul className={`mt-6 space-y-2 text-sm ${p.highlight ? "text-indigo-50" : "text-gray-600"}`}>
+                {p.features.map((f) => (
+                  <li key={f} className="flex items-start gap-2">
+                    <span className="mt-0.5">✓</span>
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+              <Link
+                href="/signup"
+                className={`mt-8 rounded-xl px-4 py-2.5 text-center font-semibold text-sm transition ${
+                  p.highlight
+                    ? "bg-white text-indigo-700 hover:bg-indigo-50"
+                    : "bg-indigo-600 text-white hover:bg-indigo-500"
+                }`}
+              >
+                {p.cta}
+              </Link>
+            </div>
+          ))}
+        </div>
+
+        {/* Comparison callout */}
+        <div className="mt-12 rounded-2xl bg-white border border-gray-200 p-6 md:p-8">
+          <h3 className="font-semibold text-gray-900 text-lg">What's the difference?</h3>
+          <div className="mt-6 grid md:grid-cols-2 gap-6 text-sm">
+            <div className="rounded-xl bg-gray-50 p-5">
+              <div className="font-semibold text-indigo-700">Starter — $19.95</div>
+              <p className="mt-2 text-gray-600">
+                AI answers the comment, question or complaint with your scripted reply,
+                and escalates to you when it's unsure. Perfect for managing high-volume
+                social chatter.
+              </p>
+            </div>
+            <div className="rounded-xl bg-indigo-50 p-5">
+              <div className="font-semibold text-indigo-700">Pro — $49.95</div>
+              <p className="mt-2 text-gray-600">
+                Everything in Starter <strong>plus</strong> a sales conversation.
+                After the first reply, the AI keeps chatting — answering follow-ups,
+                promoting the right product, overcoming objections, and sending a
+                checkout link. Follows up until they buy.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <p className="mt-8 text-center text-sm text-gray-500">
+          Cancel anytime · 30-day money-back guarantee · Prices in USD
+        </p>
+      </div>
+    </section>
+  );
+}import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+import { getOrgAccess } from "@/lib/trial";
+import UpgradeButton from "./upgrade-button";
+
+export default async function BillingPage() {
+  const session = await getServerSession(authOptions);
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: session!.user.id },
+    include: { org: true },
+  });
+  const access = await getOrgAccess(user.orgId!);
+
+  return (
+    <div className="max-w-4xl mx-auto p-8">
+      <h1 className="text-2xl font-bold text-gray-900">Billing</h1>
+
+      <div className="mt-6 rounded-2xl border border-gray-200 p-6 bg-white">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm text-gray-500">Current plan</div>
+            <div className="text-xl font-bold text-gray-900 mt-1">{access.plan}</div>
+            {access.trialDaysLeft > 0 && (
+              <div className="text-sm text-indigo-600 mt-1">
+                🎉 {access.trialDaysLeft} days left in free trial
+              </div>
+            )}
+          </div>
+          <div className="flex gap-2">
+            {access.plan !== "PRO" && <UpgradeButton plan="PRO" label="Upgrade to Pro — $49.95" />}
+            {access.plan === "TRIAL" && <UpgradeButton plan="STARTER" label="Choose Starter — $19.95" />}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-gray-200 p-6 bg-white">
+        <div className="text-sm text-gray-500">Usage this cycle</div>
+        <div className="mt-3 grid sm:grid-cols-3 gap-4">
+          <Stat label="AI replies" value={`${0} / ${access.limits.replies}`} />
+          <Stat label="Profiles" value={`${user.org!.name ? 0 : 0} / ${access.limits.profiles}`} />
+          <Stat label="Deep conversations" value={access.limits.deepMode ? "Enabled" : "Locked"} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl bg-gray-50 p-4">
+      <div className="text-xs text-gray-500">{label}</div>
+      <div className="text-lg font-semibold text-gray-900 mt-1">{value}</div>
+    </div>
+  );
+}"use client";
+export default function UpgradeButton({ plan, label }: { plan: string; label: string }) {
+  async function go() {
+    const res = await fetch("/api/stripe/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ plan }),
+    });
+    const { url } = await res.json();
+    window.location.href = url;
+  }
+  return (
+    <button
+      onClick={go}
+      className="rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 transition"
+    >
+      {label}
+    </button>
+  );
+}
