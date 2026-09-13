@@ -1958,3 +1958,358 @@ export default async function EditProduct({ params }: { params: { id: string } }
     </div>
   );
 }
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+import { getOrgAccess } from "@/lib/trial";
+import ConversationList from "./conversation-list";
+
+export default async function ConversationsPage() {
+  const session = await getServerSession(authOptions);
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: session!.user.id },
+    include: { org: true },
+  });
+
+  if (!user.orgId) return <div className="p-8 text-gray-500">No organization</div>;
+
+  const access = await getOrgAccess(user.orgId);
+  const locked = !access.limits.deepMode;
+
+  return (
+    <div className="max-w-6xl mx-auto p-8">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Sales Conversations</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            AI-driven threads that keep engaging the customer until they buy.
+          </p>
+        </div>
+      </div>
+
+      {locked ? (
+        <div className="mt-8 rounded-2xl bg-gradient-to-r from-indigo-600 to-cyan-500 text-white p-8">
+          <h2 className="font-semibold text-lg">🔒 Pro feature</h2>
+          <p className="text-sm text-indigo-50 mt-1 max-w-xl">
+            Upgrade to Pro to unlock extended conversations — the AI promotes your products,
+            overcomes objections, sends checkout links, and follows up until purchase.
+          </p>
+        </div>
+      ) : (
+        <ConversationList />
+      )}
+    </div>
+  );
+}"use client";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+
+type Conv = {
+  id: string;
+  outcome: "OPEN" | "CONVERTED" | "LOST" | "HANDED_OFF";
+  createdAt: string;
+  updatedAt: string;
+  purchaseAt: string | null;
+  messageCount: number;
+  lastMessage: string;
+  comment: {
+    authorName: string;
+    authorHandle: string | null;
+    content: string;
+    platform: string;
+  };
+};
+
+const FILTERS = ["ALL", "OPEN", "CONVERTED", "HANDED_OFF", "LOST"] as const;
+
+const OUTCOME_STYLES: Record<string, string> = {
+  OPEN: "bg-blue-50 text-blue-700",
+  CONVERTED: "bg-green-50 text-green-700",
+  HANDED_OFF: "bg-amber-50 text-amber-700",
+  LOST: "bg-gray-100 text-gray-600",
+};
+
+export default function ConversationList() {
+  const [filter, setFilter] = useState<(typeof FILTERS)[number]>("ALL");
+  const [search, setSearch] = useState("");
+  const [items, setItems] = useState<Conv[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (filter !== "ALL") params.set("outcome", filter);
+    if (search) params.set("q", search);
+
+    setLoading(true);
+    fetch(`/api/conversations?${params}`)
+      .then((r) => r.json())
+      .then((d) => setItems(d.conversations ?? []))
+      .finally(() => setLoading(false));
+  }, [filter, search]);
+
+  const stats = {
+    total: items.length,
+    converted: items.filter((i) => i.outcome === "CONVERTED").length,
+    open: items.filter((i) => i.outcome === "OPEN").length,
+  };
+
+  return (
+    <div className="mt-8">
+      {/* Stat cards */}
+      <div className="grid sm:grid-cols-3 gap-4 mb-6">
+        <Stat label="Active threads" value={stats.total} />
+        <Stat label="Converted" value={stats.converted} tone="green" />
+        <Stat label="Still open" value={stats.open} tone="indigo" />
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between mb-4">
+        <div className="flex flex-wrap gap-2">
+          {FILTERS.map((f) => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`rounded-full px-3 py-1.5 text-xs font-medium border transition ${
+                filter === f
+                  ? "bg-indigo-600 text-white border-indigo-600"
+                  : "bg-white border-gray-200 text-gray-700 hover:border-gray-300"
+              }`}
+            >
+              {f.replace("_", " ")}
+            </button>
+          ))}
+        </div>
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search conversations…"
+          className="rounded-lg border border-gray-200 px-3 py-2 text-sm w-full sm:w-64"
+        />
+      </div>
+
+      {/* List */}
+      <div className="rounded-2xl border border-gray-200 bg-white divide-y divide-gray-100 overflow-hidden">
+        {loading ? (
+          <div className="p-12 text-center text-sm text-gray-500">Loading…</div>
+        ) : items.length === 0 ? (
+          <div className="p-12 text-center">
+            <div className="text-4xl">💬</div>
+            <h3 className="mt-3 font-semibold text-gray-900">No conversations yet</h3>
+            <p className="text-sm text-gray-500 mt-1">
+              When the AI extends a comment into a sales conversation, it'll appear here.
+            </p>
+          </div>
+        ) : (
+          items.map((c) => (
+            <Link
+              key={c.id}
+              href={`/conversations/${c.id}`}
+              className="block px-5 py-4 hover:bg-gray-50 transition"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-gray-900">
+                      {c.comment.authorName}
+                    </span>
+                    {c.comment.authorHandle && (
+                      <span className="text-xs text-gray-400">
+                        @{c.comment.authorHandle}
+                      </span>
+                    )}
+                    <span className="text-xs text-gray-400">· {c.comment.platform}</span>
+                  </div>
+                  <p className="text-sm text-gray-600 mt-1 line-clamp-1">
+                    <span className="text-gray-400">Original: </span>
+                    {c.comment.content}
+                  </p>
+                  <p className="text-sm text-gray-500 mt-1 line-clamp-1">
+                    <span className="text-indigo-500 font-medium">Latest: </span>
+                    {c.lastMessage}
+                  </p>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <span
+                    className={`inline-block rounded-full text-[10px] font-semibold uppercase px-2 py-1 ${OUTCOME_STYLES[c.outcome]}`}
+                  >
+                    {c.outcome.replace("_", " ")}
+                  </span>
+                  <div className="text-xs text-gray-400 mt-2">
+                    {c.messageCount} messages
+                  </div>
+                  <div className="text-xs text-gray-400">
+                    {new Date(c.updatedAt).toLocaleDateString()}
+                  </div>
+                </div>
+              </div>
+            </Link>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value, tone = "gray" }: { label: string; value: number; tone?: "gray" | "green" | "indigo" }) {
+  const tones = {
+    gray: "bg-white text-gray-900",
+    green: "bg-green-50 text-green-900",
+    indigo: "bg-indigo-50 text-indigo-900",
+  };
+  return (
+    <div className={`rounded-2xl border border-gray-200 p-5 ${tones[tone]}`}>
+      <div className="text-xs text-gray-500 uppercase tracking-wide">{label}</div>
+      <div className="mt-2 text-3xl font-bold">{value}</div>
+    </div>
+  );
+}import ThreadView from "../thread-view";
+
+export default function ThreadPage({ params }: { params: { id: string } }) {
+  return (
+    <div className="max-w-4xl mx-auto p-8">
+      <ThreadView id={params.id} />
+    </div>
+  );
+}"use client";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+
+type Message = {
+  id: string;
+  role: "customer" | "ai" | "host";
+  content: string;
+  createdAt: string;
+};
+type Conv = {
+  id: string;
+  outcome: "OPEN" | "CONVERTED" | "LOST" | "HANDED_OFF";
+  purchaseAt: string | null;
+  createdAt: string;
+  comment: {
+    authorName: string;
+    authorHandle: string | null;
+    content: string;
+    platform: string;
+  };
+  messages: Message[];
+};
+
+export default function ThreadView({ id }: { id: string }) {
+  const router = useRouter();
+  const [conv, setConv] = useState<Conv | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`/api/conversations/${id}`)
+      .then((r) => r.json())
+      .then((d) => setConv(d.conversation))
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  if (loading) return <div className="text-gray-500">Loading…</div>;
+  if (!conv) return <div className="text-gray-500">Conversation not found.</div>;
+
+  const converted = conv.outcome === "CONVERTED";
+
+  return (
+    <div>
+      <button
+        onClick={() => router.push("/conversations")}
+        className="text-sm text-gray-500 hover:text-gray-900 mb-4"
+      >
+        ← All conversations
+      </button>
+
+      <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+        {/* Header */}
+        <div className="border-b border-gray-100 px-6 py-5 flex items-center justify-between">
+          <div>
+            <div className="font-semibold text-gray-900">
+              {conv.comment.authorName}
+              {conv.comment.authorHandle && (
+                <span className="text-sm text-gray-400 font-normal ml-2">
+                  @{conv.comment.authorHandle}
+                </span>
+              )}
+            </div>
+            <div className="text-xs text-gray-500 mt-0.5">
+              {conv.comment.platform} · started {new Date(conv.createdAt).toLocaleString()}
+            </div>
+          </div>
+          <div className="text-right">
+            <span
+              className={`inline-block rounded-full text-[10px] font-bold uppercase px-2.5 py-1 ${
+                converted
+                  ? "bg-green-100 text-green-700"
+                  : conv.outcome === "HANDED_OFF"
+                  ? "bg-amber-100 text-amber-700"
+                  : "bg-blue-100 text-blue-700"
+              }`}
+            >
+              {conv.outcome.replace("_", " ")}
+            </span>
+            {converted && conv.purchaseAt && (
+              <div className="text-xs text-green-600 mt-1">
+                🎉 Purchased {new Date(conv.purchaseAt).toLocaleDateString()}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Original comment */}
+        <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
+          <div className="text-xs uppercase tracking-wide text-gray-500 font-medium mb-1">
+            Original comment
+          </div>
+          <div className="text-sm text-gray-800">{conv.comment.content}</div>
+        </div>
+
+        {/* Thread */}
+        <div className="px-6 py-6 space-y-4">
+          {conv.messages.map((m) => (
+            <MessageBubble key={m.id} m={m} />
+          ))}
+        </div>
+
+        {converted && (
+          <div className="px-6 py-5 bg-green-50 border-t border-green-100">
+            <div className="font-semibold text-green-900">🎉 Converted to a sale</div>
+            <p className="text-sm text-green-800 mt-1">
+              This AI-driven conversation ended in a purchase. Nice.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MessageBubble({ m }: { m: Message }) {
+  const isCustomer = m.role === "customer";
+  const isHost = m.role === "host";
+  return (
+    <div className={isCustomer ? "flex justify-start" : "flex justify-end"}>
+      <div className="max-w-[80%]">
+        <div
+          className={`rounded-2xl px-4 py-2.5 text-sm ${
+            isCustomer
+              ? "bg-gray-100 text-gray-800"
+              : isHost
+              ? "bg-amber-100 text-amber-900"
+              : "bg-indigo-600 text-white"
+          }`}
+        >
+          {m.content}
+        </div>
+        <div
+          className={`text-[10px] text-gray-400 mt-1 ${
+            isCustomer ? "text-left" : "text-right"
+          }`}
+        >
+          {isCustomer ? "Customer" : isHost ? "Host" : "AI"} ·{" "}
+          {new Date(m.createdAt).toLocaleTimeString()}
+        </div>
+      </div>
+    </div>
+  );
+}
