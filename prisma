@@ -1,0 +1,89 @@
+// prisma/schema.prisma
+generator client { provider = "prisma-client-js" }
+datasource db { provider = "postgresql"; url = env("DATABASE_URL") }
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  phone         String?
+  role          Role     @default(OWNER)
+  orgId         String
+  org           Organization @relation(fields: [orgId], references: [id])
+  createdAt     DateTime @default(now())
+}
+
+enum Role { OWNER, ADMIN, AGENT }
+
+model Organization {
+  id            String   @id @default(cuid())
+  name          String
+  stripeCustomerId String? @unique
+  plan          Plan     @default(FREE)
+  users         User[]
+  profiles      Profile[]
+  scripts       Script[]
+  createdAt     DateTime @default(now())
+}
+
+enum Plan { FREE, STARTER, PRO, ENTERPRISE }
+
+model Profile {
+  id            String   @id @default(cuid())
+  orgId         String
+  org           Organization @relation(fields: [orgId], references: [id])
+  platform      Platform
+  handle        String
+  accessToken   String?
+  refreshToken  String?
+  autoReply     Boolean  @default(true)
+  escalationEmail String?
+  escalationPhone String?
+  comments      Comment[]
+  createdAt     DateTime @default(now())
+}
+
+enum Platform { INSTAGRAM, FACEBOOK, TIKTOK, YOUTUBE, X, LINKEDIN, GOOGLE }
+
+model Script {
+  id            String   @id @default(cuid())
+  orgId         String
+  org           Organization @relation(fields: [orgId], references: [id])
+  intent        String   // e.g. "shipping_question", "pricing", "complaint"
+  trigger       String[] // keywords or embeddings match
+  response      String
+  escalate      Boolean  @default(false)
+  createdAt     DateTime @default(now())
+}
+
+model Comment {
+  id            String   @id @default(cuid())
+  profileId     String
+  profile       Profile  @relation(fields: [profileId], references: [id])
+  externalId    String
+  authorName    String
+  authorHandle  String?
+  content       String
+  intent        String?
+  sentiment     Sentiment @default(NEUTRAL)
+  status        Status   @default(PENDING)
+  aiResponse    String?
+  finalResponse String?
+  confidence    Float?
+  escalatedAt   DateTime?
+  respondedAt   DateTime?
+  createdAt     DateTime @default(now())
+}
+
+enum Sentiment { POSITIVE, NEUTRAL, NEGATIVE }
+enum Status { PENDING, AI_REPLIED, ESCALATED, HUMAN_REPLIED, RESOLVED }
+
+model Escalation {
+  id            String   @id @default(cuid())
+  commentId     String   @unique
+  comment       Comment  @relation(fields: [commentId], references: [id])
+  channel       String   // sms | email
+  sentAt        DateTime @default(now())
+  resolvedAt    DateTime?
+  hostReply     String?
+}
