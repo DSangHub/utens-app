@@ -115,4 +115,6 @@ src/lib/emails/
 ├── templates.ts
 └── sequences.ts
 
-src/app/api/cron/trial-emails/route.ts
+src/app/api/cron/trial-emails/route.tsCRON_SECRET=<random-32-char>
+RESEND_API_KEY=re_xxx
+NEXTAUTH_URL=https://utens.app
