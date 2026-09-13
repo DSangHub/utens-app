@@ -110,3 +110,9 @@ src/app/(dashboard)/conversations/
     └── conversations/
         ├── route.ts            # GET (list with filters)
         └── [id]/route.ts       # GET (thread details)
+src/lib/emails/
+├── send.ts
+├── templates.ts
+└── sequences.ts
+
+src/app/api/cron/trial-emails/route.ts
