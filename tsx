@@ -860,3 +860,181 @@ function OAuthBtn({ provider, label }: { provider: string; label: string }) {
     </button>
   );
 }
+import StepShell from "@/components/onboarding/StepShell";
+import AccountForm from "./form";
+
+export default function Page() {
+  return (
+    <StepShell
+      title="Welcome! Let's get you set up 🎉"
+      subtitle="This takes about 5 minutes. We'll save as you go."
+      nextHref="/onboarding/step-2-organization"
+    >
+      <AccountForm />
+    </StepShell>
+  );
+}"use client";
+import { useState } from "react";
+
+export default function AccountForm() {
+  const [phone, setPhone] = useState("");
+  return (
+    <div>
+      <label className="block">
+        <span className="text-sm font-medium text-gray-700">Mobile (for escalation SMS)</span>
+        <input
+          type="tel"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="+1 555 123 4567"
+          className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm"
+        />
+        <span className="text-xs text-gray-500">Optional — you can add this later.</span>
+      </label>
+    </div>
+  );
+}"use client";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import StepShell from "@/components/onboarding/StepShell";
+
+const INDUSTRIES = [
+  "E-commerce / DTC", "Beauty & Skincare", "Fitness & Wellness",
+  "Food & Beverage", "SaaS", "Creator / Influencer",
+  "Agency", "Hospitality", "Other",
+];
+
+export default function Page() {
+  const [name, setName] = useState("");
+  const [industry, setIndustry] = useState("");
+  const [voice, setVoice] = useState("friendly");
+  const router = useRouter();
+
+  async function save() {
+    await fetch("/api/onboarding/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ step: 2, name, industry, brandVoice: voice }),
+    });
+  }
+
+  return (
+    <StepShell
+      title="Tell us about your brand"
+      subtitle="We'll use this to tune your AI replies."
+      nextHref="/onboarding/step-3-connect"
+      backHref="/onboarding/step-1-account"
+      onNext={save}
+    >
+      <label className="block">
+        <span className="text-sm font-medium text-gray-700">Brand name</span>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="e.g. Glow Skincare"
+          className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm"
+        />
+      </label>
+
+      <div>
+        <span className="text-sm font-medium text-gray-700">Industry</span>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {INDUSTRIES.map((i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => setIndustry(i)}
+              className={`px-3 py-1.5 rounded-full text-sm border transition ${
+                industry === i
+                  ? "bg-indigo-600 text-white border-indigo-600"
+                  : "bg-white text-gray-700 border-gray-200 hover:border-gray-300"
+              }`}
+            >
+              {i}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <span className="text-sm font-medium text-gray-700">Brand voice</span>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          {["friendly", "professional", "playful", "luxurious"].map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setVoice(v)}
+              className={`rounded-lg border px-3 py-2 text-sm capitalize transition ${
+                voice === v
+                  ? "bg-indigo-50 border-indigo-500 text-indigo-700"
+                  : "bg-white border-gray-200 text-gray-700 hover:border-gray-300"
+              }`}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
+      </div>
+    </StepShell>
+  );
+}"use client";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import StepShell from "@/components/onboarding/StepShell";
+
+const PLATFORMS = [
+  { id: "instagram", name: "Instagram", icon: "📸", color: "from-pink-500 to-purple-500" },
+  { id: "facebook", name: "Facebook", icon: "👍", color: "from-blue-500 to-blue-700" },
+  { id: "tiktok", name: "TikTok", icon: "🎵", color: "from-gray-900 to-black" },
+  { id: "youtube", name: "YouTube", icon: "▶️", color: "from-red-500 to-red-700" },
+  { id: "x", name: "X (Twitter)", icon: "🐦", color: "from-gray-800 to-black" },
+  { id: "linkedin", name: "LinkedIn", icon: "💼", color: "from-blue-600 to-blue-800" },
+  { id: "google", name: "Google Business", icon: "🔍", color: "from-yellow-400 to-red-500" },
+];
+
+export default function Page() {
+  const router = useRouter();
+  const [connected, setConnected] = useState<string[]>([]);
+
+  function connect(id: string) {
+    // Real flow: redirect to /api/oauth/{id}
+    // Demo: simulate success
+    setConnected([...connected, id]);
+  }
+
+  return (
+    <StepShell
+      title="Connect your profiles"
+      subtitle="Pick at least one. You can add more later."
+      nextHref="/onboarding/step-4-scripts"
+      backHref="/onboarding/step-2-organization"
+      skipHref="/onboarding/step-4-scripts"
+      nextLabel="Continue"
+    >
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {PLATFORMS.map((p) => {
+          const isConnected = connected.includes(p.id);
+          return (
+            <button
+              key={p.id}
+              onClick={() => !isConnected && connect(p.id)}
+              className={`relative rounded-xl border p-4 text-left transition ${
+                isConnected
+                  ? "border-green-500 bg-green-50"
+                  : "border-gray-200 hover:border-gray-300 hover:shadow-sm"
+              }`}
+            >
+              <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${p.color} grid place-items-center text-white text-lg`}>
+                {p.icon}
+              </div>
+              <div className="mt-3 text-sm font-medium text-gray-900">{p.name}</div>
+              <div className={`mt-1 text-xs ${isConnected ? "text-green-600 font-semibold" : "text-gray-500"}`}>
+                {isConnected ? "✓ Connected" : "Click to connect"}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </StepShell>
+  );
+}
