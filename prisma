@@ -86,4 +86,30 @@ model Escalation {
   sentAt        DateTime @default(now())
   resolvedAt    DateTime?
   hostReply     String?
+}model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  passwordHash   String?
+  name           String?
+  phone          String?
+  role           Role     @default(OWNER)
+  orgId          String?
+  org            Organization? @relation(fields: [orgId], references: [id])
+  onboardStep    Int      @default(1)
+  onboardDone    Boolean  @default(false)
+  createdAt      DateTime @default(now())
+}
+
+model Organization {
+  id             String   @id @default(cuid())
+  name           String
+  industry       String?
+  brandVoice     String?
+  stripeCustomerId String? @unique
+  plan           Plan     @default(FREE)
+  users          User[]
+  profiles       Profile[]
+  scripts        Script[]
+  createdAt      DateTime @default(now())
+  onboardedAt    DateTime?
 }
