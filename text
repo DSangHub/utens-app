@@ -92,3 +92,12 @@ Comment → Classify → Match script → Reply → DoneComment → Classify →
         → Tracks conversion in dashboard STRIPE_PRICE_STARTER=price_xxx
 STRIPE_PRICE_PRO=price_yyy
 TRIAL_DAYS=14
+src/app/(dashboard)/products/
+├── page.tsx                    # List view
+├── new/page.tsx                # Create
+├── [id]/page.tsx               # Edit
+├── product-form.tsx            # Shared form
+├── product-row.tsx             # Row component
+└── api/
+    ├── products/route.ts       # GET (list) + POST (create)
+    └── products/[id]/route.ts  # GET, PATCH, DELETE
