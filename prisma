@@ -178,3 +178,22 @@ model EmailLog {
   sentAt   DateTime @default(now())
   @@unique([userId, stage])
 }
+model Organization {
+  // ... existing
+  stripeOverageItemId String?    // subscription item ID for the metered price
+  repliesThisPeriod   Int        @default(0)
+  periodStart         DateTime?
+  periodEnd           DateTime?
+  overageReportedAt   DateTime?
+}
+
+model UsageEvent {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  kind      String   // "reply" | "deep_turn"
+  refId     String?  // commentId or conversationMessageId
+  billable  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  @@index([orgId, createdAt])
+}
