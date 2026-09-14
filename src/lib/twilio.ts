@@ -27,6 +27,26 @@ export async function sendEscalation(input: {
   return { sid: message.sid, status: message.status };
 }
 
+export async function sendTrialSignup(input: {
+  name: string;
+  business: string;
+  email: string;
+  phone?: string;
+}) {
+  const from = process.env.TWILIO_FROM_NUMBER;
+  const to = process.env.UTENS_HOST_PHONE;
+  if (!from || !to) throw new Error("Twilio from/to phone number is not configured");
+  const body = [
+    "New Utens 14-day trial request",
+    `Name: ${input.name}`,
+    `Business: ${input.business}`,
+    `Email: ${input.email}`,
+    input.phone ? `Phone: ${input.phone}` : null,
+  ].filter(Boolean).join("\n");
+  const message = await twilioClient().messages.create({ from, to, body });
+  return { sid: message.sid, status: message.status };
+}
+
 export function isValidTwilioWebhook(request: Request, form: URLSearchParams) {
   const token = process.env.TWILIO_AUTH_TOKEN;
   const signature = request.headers.get("x-twilio-signature");
