@@ -1,0 +1,50 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id         String    @id @default(cuid())
+  name       String
+  brandVoice String    @default("friendly, professional, concise")
+  hostPhone  String?
+  scripts    Script[]
+  messages   Message[]
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+
+model Script {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  topic          String
+  answer         String
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  source         String
+  externalId     String?
+  customerName   String?
+  customerText   String
+  aiReply        String?
+  finalReply     String?
+  confidence     Float?
+  category       String?
+  escalated      Boolean      @default(false)
+  twilioSid      String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([source, externalId])
+  @@index([organizationId, createdAt])
+}
